@@ -241,7 +241,6 @@ kubectl get services
 echo
 
 echo -e "${YELLOW}Waiting for LoadBalancer external IPs to be assigned...${NC}"
-echo "This may take 2-3 minutes..."
 echo
 
 # Wait for frontend LoadBalancer IP
