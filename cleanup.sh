@@ -13,9 +13,8 @@ NC='\033[0m'
 CLUSTER_NAME="${CLUSTER_NAME:-routegate-cluster}"
 ZONE="${ZONE:-us-central1-a}"
 
-echo -e "${RED}WARNING: This will delete all RouteGate resources${NC}"
 echo
-
+echo -e "${RED}WARNING: This will delete all RouteGate resources${NC}"
 read -p "Are you sure you want to continue? (y/n) " -n 1 -r
 echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
