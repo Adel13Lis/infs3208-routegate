@@ -14,7 +14,7 @@ CLUSTER_NAME="${CLUSTER_NAME:-routegate-cluster}"
 ZONE="${ZONE:-us-central1-a}"
 
 echo
-echo -e "${RED}WARNING: This will delete all RouteGate resources${NC}"
+echo -e "${RED}WARNING: This will delete all RouteGate resources and the Kubernetes Cluster on GCP !!!${NC}"
 read -p "Are you sure you want to continue? (y/n) " -n 1 -r
 echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
