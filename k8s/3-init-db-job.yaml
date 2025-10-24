@@ -1,0 +1,164 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-db
+spec:
+  template:
+    spec:
+      containers:
+      - name: init-db
+        image: mysql:8.0
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: MYSQL_ROOT_PASSWORD
+        - name: MYSQL_PWD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: MYSQL_ROOT_PASSWORD
+        command:
+        - /bin/bash
+        - -c
+        - |
+          echo "Waiting for MySQL to be ready..."
+          until mysql -h mysql -u root -e "SELECT 1" 2>/dev/null; do
+            echo "MySQL not ready, waiting..."
+            sleep 5
+          done
+          echo "MySQL is ready! Initializing database..."
+          mysql -h mysql -u root routegate <<'EOF'
+          CREATE TABLE IF NOT EXISTS airports (
+              airport_code VARCHAR(4) PRIMARY KEY,
+              airport_name VARCHAR(100) NOT NULL,
+              city VARCHAR(100),
+              country VARCHAR(100),
+              latitude DECIMAL(9,6),
+              longitude DECIMAL(9,6),
+              timezone VARCHAR(50),
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+
+          CREATE TABLE IF NOT EXISTS users (
+              user_id INT AUTO_INCREMENT PRIMARY KEY,
+              username VARCHAR(50) UNIQUE NOT NULL,
+              email VARCHAR(100) UNIQUE NOT NULL,
+              password_hash VARCHAR(255) NOT NULL,
+              first_name VARCHAR(50),
+              last_name VARCHAR(50),
+              home_airport VARCHAR(4),
+              role ENUM('admin', 'staff', 'viewer') DEFAULT 'staff',
+              is_active BOOLEAN DEFAULT TRUE,
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (home_airport) REFERENCES airports(airport_code)
+          );
+
+          CREATE TABLE IF NOT EXISTS flights (
+              flight_id INT AUTO_INCREMENT PRIMARY KEY,
+              flight_number VARCHAR(20) NOT NULL,
+              origin_airport VARCHAR(4),
+              destination_airport VARCHAR(4),
+              departure_date DATE,
+              departure_time TIME,
+              arrival_date DATE,
+              arrival_time TIME,
+              status ENUM('scheduled', 'departed', 'arrived', 'cancelled') DEFAULT 'scheduled',
+              aircraft_type VARCHAR(50),
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (origin_airport) REFERENCES airports(airport_code),
+              FOREIGN KEY (destination_airport) REFERENCES airports(airport_code)
+          );
+
+          INSERT IGNORE INTO airports (airport_code, airport_name, city, country, latitude, longitude, timezone) VALUES
+          ('BNE', 'Brisbane International', 'Brisbane', 'Australia', -27.3842, 153.1175, 'Australia/Brisbane'),
+          ('LAX', 'Los Angeles International', 'Los Angeles', 'USA', 33.9416, -118.4085, 'America/Los_Angeles'),
+          ('JFK', 'John F Kennedy International', 'New York', 'USA', 40.6413, -73.7781, 'America/New_York'),
+          ('LHR', 'London Heathrow', 'London', 'UK', 51.4700, -0.4543, 'Europe/London'),
+          ('DXB', 'Dubai International', 'Dubai', 'UAE', 25.2532, 55.3657, 'Asia/Dubai'),
+          ('SYD', 'Sydney Kingsford Smith', 'Sydney', 'Australia', -33.9461, 151.1772, 'Australia/Sydney'),
+          ('CDG', 'Charles de Gaulle', 'Paris', 'France', 49.0097, 2.5479, 'Europe/Paris'),
+          ('NRT', 'Narita International', 'Tokyo', 'Japan', 35.7720, 140.3929, 'Asia/Tokyo'),
+          ('SIN', 'Singapore Changi', 'Singapore', 'Singapore', 1.3644, 103.9915, 'Asia/Singapore'),
+          ('AMS', 'Amsterdam Schiphol', 'Amsterdam', 'Netherlands', 52.3105, 4.7683, 'Europe/Amsterdam'),
+          ('KUL', 'Kuala Lumpur International', 'Kuala Lumpur', 'Malaysia', 2.7456, 101.7099, 'Asia/Kuala_Lumpur');
+
+          INSERT IGNORE INTO users (username, email, password_hash, first_name, last_name, home_airport, role) VALUES
+          ('demo-1234-bne', 'demo@routegate.com', 'd3ad9315b7be5dd53b31a273b3b3aba5defe700808305aa16a3062b76658a791', 'Demo', 'User', 'BNE', 'staff');
+
+          INSERT IGNORE INTO flights (flight_number, origin_airport, destination_airport, departure_date, departure_time, arrival_date, arrival_time, status, aircraft_type) VALUES
+          -- Brisbane (BNE) departures
+          ('QF15', 'BNE', 'LAX', DATE_ADD(CURDATE(), INTERVAL 1 DAY), '09:30:00', DATE_ADD(CURDATE(), INTERVAL 1 DAY), '07:45:00', 'scheduled', 'Boeing 787-9'),
+          ('QF9', 'BNE', 'LHR', DATE_ADD(CURDATE(), INTERVAL 1 DAY), '19:00:00', DATE_ADD(CURDATE(), INTERVAL 2 DAY), '05:30:00', 'scheduled', 'Boeing 787-9'),
+          ('QF19', 'BNE', 'SIN', DATE_ADD(CURDATE(), INTERVAL 2 DAY), '10:15:00', DATE_ADD(CURDATE(), INTERVAL 2 DAY), '16:00:00', 'scheduled', 'Airbus A330-300'),
+          ('VA41', 'BNE', 'AMS', DATE_ADD(CURDATE(), INTERVAL 2 DAY), '21:00:00', DATE_ADD(CURDATE(), INTERVAL 3 DAY), '06:45:00', 'scheduled', 'Boeing 777-300ER'),
+          ('QF51', 'BNE', 'SYD', DATE_ADD(CURDATE(), INTERVAL 3 DAY), '06:00:00', DATE_ADD(CURDATE(), INTERVAL 3 DAY), '07:30:00', 'scheduled', 'Boeing 737-800'),
+          ('MH125', 'BNE', 'KUL', DATE_ADD(CURDATE(), INTERVAL 3 DAY), '22:45:00', DATE_ADD(CURDATE(), INTERVAL 4 DAY), '04:30:00', 'scheduled', 'Airbus A330-300'),
+          ('QF127', 'BNE', 'NRT', DATE_ADD(CURDATE(), INTERVAL 4 DAY), '11:00:00', DATE_ADD(CURDATE(), INTERVAL 4 DAY), '19:45:00', 'scheduled', 'Boeing 787-8'),
+          ('EK434', 'BNE', 'DXB', DATE_ADD(CURDATE(), INTERVAL 5 DAY), '22:00:00', DATE_ADD(CURDATE(), INTERVAL 6 DAY), '04:50:00', 'scheduled', 'Airbus A380-800'),
+          ('QF51', 'BNE', 'SYD', DATE_ADD(CURDATE(), INTERVAL 6 DAY), '07:30:00', DATE_ADD(CURDATE(), INTERVAL 6 DAY), '09:00:00', 'scheduled', 'Boeing 737-800'),
+          ('UA863', 'BNE', 'LAX', DATE_ADD(CURDATE(), INTERVAL 7 DAY), '10:00:00', DATE_ADD(CURDATE(), INTERVAL 7 DAY), '08:15:00', 'scheduled', 'Boeing 787-9'),
+          ('QF19', 'BNE', 'SIN', DATE_ADD(CURDATE(), INTERVAL 8 DAY), '10:15:00', DATE_ADD(CURDATE(), INTERVAL 8 DAY), '16:00:00', 'scheduled', 'Airbus A330-300'),
+          ('AF465', 'BNE', 'CDG', DATE_ADD(CURDATE(), INTERVAL 9 DAY), '20:30:00', DATE_ADD(CURDATE(), INTERVAL 10 DAY), '06:15:00', 'scheduled', 'Boeing 777-300ER'),
+          ('QF127', 'BNE', 'NRT', DATE_ADD(CURDATE(), INTERVAL 10 DAY), '11:00:00', DATE_ADD(CURDATE(), INTERVAL 10 DAY), '19:45:00', 'scheduled', 'Boeing 787-8'),
+          ('MH125', 'BNE', 'KUL', DATE_ADD(CURDATE(), INTERVAL 11 DAY), '22:45:00', DATE_ADD(CURDATE(), INTERVAL 12 DAY), '04:30:00', 'scheduled', 'Airbus A330-300'),
+          ('QF51', 'BNE', 'SYD', DATE_ADD(CURDATE(), INTERVAL 12 DAY), '14:30:00', DATE_ADD(CURDATE(), INTERVAL 12 DAY), '16:00:00', 'scheduled', 'Boeing 737-800'),
+          ('VA41', 'BNE', 'AMS', DATE_ADD(CURDATE(), INTERVAL 13 DAY), '21:00:00', DATE_ADD(CURDATE(), INTERVAL 14 DAY), '06:45:00', 'scheduled', 'Boeing 777-300ER'),
+
+          -- Sydney (SYD) departures
+          ('QF11', 'SYD', 'LAX', DATE_ADD(CURDATE(), INTERVAL 1 DAY), '10:45:00', DATE_ADD(CURDATE(), INTERVAL 1 DAY), '08:30:00', 'scheduled', 'Airbus A380-800'),
+          ('QF1', 'SYD', 'LHR', DATE_ADD(CURDATE(), INTERVAL 2 DAY), '18:15:00', DATE_ADD(CURDATE(), INTERVAL 3 DAY), '05:45:00', 'scheduled', 'Airbus A380-800'),
+          ('SQ231', 'SYD', 'SIN', DATE_ADD(CURDATE(), INTERVAL 3 DAY), '09:00:00', DATE_ADD(CURDATE(), INTERVAL 3 DAY), '15:30:00', 'scheduled', 'Airbus A350-900'),
+          ('MH141', 'SYD', 'KUL', DATE_ADD(CURDATE(), INTERVAL 4 DAY), '21:30:00', DATE_ADD(CURDATE(), INTERVAL 5 DAY), '03:15:00', 'scheduled', 'Airbus A330-300'),
+          ('KL809', 'SYD', 'AMS', DATE_ADD(CURDATE(), INTERVAL 5 DAY), '20:00:00', DATE_ADD(CURDATE(), INTERVAL 6 DAY), '06:30:00', 'scheduled', 'Boeing 777-300ER'),
+          ('EK413', 'SYD', 'DXB', DATE_ADD(CURDATE(), INTERVAL 6 DAY), '22:30:00', DATE_ADD(CURDATE(), INTERVAL 7 DAY), '05:20:00', 'scheduled', 'Airbus A380-800'),
+          ('QF25', 'SYD', 'NRT', DATE_ADD(CURDATE(), INTERVAL 8 DAY), '12:30:00', DATE_ADD(CURDATE(), INTERVAL 8 DAY), '20:15:00', 'scheduled', 'Boeing 787-9'),
+          ('UA839', 'SYD', 'LAX', DATE_ADD(CURDATE(), INTERVAL 10 DAY), '11:15:00', DATE_ADD(CURDATE(), INTERVAL 10 DAY), '09:00:00', 'scheduled', 'Boeing 787-9'),
+
+          -- Singapore (SIN) departures
+          ('SQ232', 'SIN', 'SYD', DATE_ADD(CURDATE(), INTERVAL 1 DAY), '23:55:00', DATE_ADD(CURDATE(), INTERVAL 2 DAY), '09:30:00', 'scheduled', 'Airbus A350-900'),
+          ('MH604', 'SIN', 'KUL', DATE_ADD(CURDATE(), INTERVAL 2 DAY), '08:30:00', DATE_ADD(CURDATE(), INTERVAL 2 DAY), '09:35:00', 'scheduled', 'Boeing 737-800'),
+          ('SQ322', 'SIN', 'AMS', DATE_ADD(CURDATE(), INTERVAL 3 DAY), '23:40:00', DATE_ADD(CURDATE(), INTERVAL 4 DAY), '06:45:00', 'scheduled', 'Airbus A350-900'),
+          ('QF20', 'SIN', 'BNE', DATE_ADD(CURDATE(), INTERVAL 4 DAY), '18:30:00', DATE_ADD(CURDATE(), INTERVAL 5 DAY), '04:15:00', 'scheduled', 'Airbus A330-300'),
+          ('SQ26', 'SIN', 'JFK', DATE_ADD(CURDATE(), INTERVAL 5 DAY), '23:30:00', DATE_ADD(CURDATE(), INTERVAL 6 DAY), '06:00:00', 'scheduled', 'Airbus A350-900ULR'),
+          ('BA12', 'SIN', 'LHR', DATE_ADD(CURDATE(), INTERVAL 7 DAY), '23:00:00', DATE_ADD(CURDATE(), INTERVAL 8 DAY), '05:55:00', 'scheduled', 'Airbus A380-800'),
+          ('MH604', 'SIN', 'KUL', DATE_ADD(CURDATE(), INTERVAL 9 DAY), '08:30:00', DATE_ADD(CURDATE(), INTERVAL 9 DAY), '09:35:00', 'scheduled', 'Boeing 737-800'),
+
+          -- Amsterdam (AMS) departures
+          ('KL835', 'AMS', 'SYD', DATE_ADD(CURDATE(), INTERVAL 1 DAY), '18:00:00', DATE_ADD(CURDATE(), INTERVAL 2 DAY), '19:30:00', 'scheduled', 'Boeing 787-10'),
+          ('KL1023', 'AMS', 'LHR', DATE_ADD(CURDATE(), INTERVAL 2 DAY), '09:15:00', DATE_ADD(CURDATE(), INTERVAL 2 DAY), '09:35:00', 'scheduled', 'Boeing 737-800'),
+          ('VA42', 'AMS', 'BNE', DATE_ADD(CURDATE(), INTERVAL 3 DAY), '19:30:00', DATE_ADD(CURDATE(), INTERVAL 4 DAY), '21:15:00', 'scheduled', 'Boeing 777-300ER'),
+          ('KL875', 'AMS', 'SIN', DATE_ADD(CURDATE(), INTERVAL 4 DAY), '21:00:00', DATE_ADD(CURDATE(), INTERVAL 5 DAY), '16:45:00', 'scheduled', 'Boeing 777-300ER'),
+          ('KL643', 'AMS', 'JFK', DATE_ADD(CURDATE(), INTERVAL 5 DAY), '17:30:00', DATE_ADD(CURDATE(), INTERVAL 5 DAY), '20:15:00', 'scheduled', 'Boeing 787-10'),
+          ('MH17', 'AMS', 'KUL', DATE_ADD(CURDATE(), INTERVAL 6 DAY), '20:15:00', DATE_ADD(CURDATE(), INTERVAL 7 DAY), '15:30:00', 'scheduled', 'Airbus A350-900'),
+          ('KL641', 'AMS', 'LAX', DATE_ADD(CURDATE(), INTERVAL 8 DAY), '15:45:00', DATE_ADD(CURDATE(), INTERVAL 8 DAY), '18:30:00', 'scheduled', 'Boeing 787-10'),
+          ('EK147', 'AMS', 'DXB', DATE_ADD(CURDATE(), INTERVAL 10 DAY), '14:30:00', DATE_ADD(CURDATE(), INTERVAL 10 DAY), '23:45:00', 'scheduled', 'Boeing 777-300ER'),
+
+          -- Kuala Lumpur (KUL) departures - Thunderstorm prone region
+          ('MH126', 'KUL', 'BNE', DATE_ADD(CURDATE(), INTERVAL 1 DAY), '06:00:00', DATE_ADD(CURDATE(), INTERVAL 1 DAY), '16:45:00', 'scheduled', 'Airbus A330-300'),
+          ('MH605', 'KUL', 'SIN', DATE_ADD(CURDATE(), INTERVAL 2 DAY), '11:00:00', DATE_ADD(CURDATE(), INTERVAL 2 DAY), '12:05:00', 'scheduled', 'Boeing 737-800'),
+          ('MH142', 'KUL', 'SYD', DATE_ADD(CURDATE(), INTERVAL 3 DAY), '08:30:00', DATE_ADD(CURDATE(), INTERVAL 3 DAY), '19:15:00', 'scheduled', 'Airbus A330-300'),
+          ('MH18', 'KUL', 'AMS', DATE_ADD(CURDATE(), INTERVAL 4 DAY), '22:30:00', DATE_ADD(CURDATE(), INTERVAL 5 DAY), '06:15:00', 'scheduled', 'Airbus A350-900'),
+          ('MH4', 'KUL', 'LHR', DATE_ADD(CURDATE(), INTERVAL 5 DAY), '21:15:00', DATE_ADD(CURDATE(), INTERVAL 6 DAY), '05:30:00', 'scheduled', 'Airbus A350-900'),
+          ('MH84', 'KUL', 'NRT', DATE_ADD(CURDATE(), INTERVAL 6 DAY), '23:50:00', DATE_ADD(CURDATE(), INTERVAL 7 DAY), '07:35:00', 'scheduled', 'Airbus A330-300'),
+          ('MH605', 'KUL', 'SIN', DATE_ADD(CURDATE(), INTERVAL 8 DAY), '11:00:00', DATE_ADD(CURDATE(), INTERVAL 8 DAY), '12:05:00', 'scheduled', 'Boeing 737-800'),
+          ('MH126', 'KUL', 'BNE', DATE_ADD(CURDATE(), INTERVAL 9 DAY), '06:00:00', DATE_ADD(CURDATE(), INTERVAL 9 DAY), '16:45:00', 'scheduled', 'Airbus A330-300'),
+          ('EK346', 'KUL', 'DXB', DATE_ADD(CURDATE(), INTERVAL 11 DAY), '03:45:00', DATE_ADD(CURDATE(), INTERVAL 11 DAY), '07:00:00', 'scheduled', 'Boeing 777-300ER'),
+
+          -- London (LHR) departures
+          ('BA15', 'LHR', 'SYD', DATE_ADD(CURDATE(), INTERVAL 2 DAY), '21:40:00', DATE_ADD(CURDATE(), INTERVAL 4 DAY), '05:25:00', 'scheduled', 'Boeing 787-9'),
+          ('QF10', 'LHR', 'SIN', DATE_ADD(CURDATE(), INTERVAL 4 DAY), '11:00:00', DATE_ADD(CURDATE(), INTERVAL 5 DAY), '07:30:00', 'scheduled', 'Airbus A380-800'),
+          ('BA179', 'LHR', 'AMS', DATE_ADD(CURDATE(), INTERVAL 6 DAY), '07:40:00', DATE_ADD(CURDATE(), INTERVAL 6 DAY), '10:00:00', 'scheduled', 'Airbus A320'),
+          ('BA2158', 'LHR', 'CDG', DATE_ADD(CURDATE(), INTERVAL 8 DAY), '18:30:00', DATE_ADD(CURDATE(), INTERVAL 8 DAY), '20:50:00', 'scheduled', 'Airbus A320'),
+
+          -- Los Angeles (LAX) departures
+          ('QF12', 'LAX', 'SYD', DATE_ADD(CURDATE(), INTERVAL 3 DAY), '22:30:00', DATE_ADD(CURDATE(), INTERVAL 5 DAY), '07:00:00', 'scheduled', 'Airbus A380-800'),
+          ('UA840', 'LAX', 'SYD', DATE_ADD(CURDATE(), INTERVAL 7 DAY), '22:00:00', DATE_ADD(CURDATE(), INTERVAL 9 DAY), '06:30:00', 'scheduled', 'Boeing 787-9'),
+          ('QF16', 'LAX', 'BNE', DATE_ADD(CURDATE(), INTERVAL 9 DAY), '21:45:00', DATE_ADD(CURDATE(), INTERVAL 11 DAY), '06:30:00', 'scheduled', 'Boeing 787-9');
+          
+          SELECT 'Database initialized successfully!' as status;
+          EOF
+          echo "Database initialization complete!"
+      restartPolicy: Never
+  backoffLimit: 3
